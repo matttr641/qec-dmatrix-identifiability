@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qecdm"
+version = "0.0.1"
+requires-python = ">=3.10"
+dependencies = ["stim", "pymatching>=2.3", "numpy", "scipy"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

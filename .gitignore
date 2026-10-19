@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+data/raw/
+.venv/
+*.npz
+!tests/fixtures/*.npz
+.DS_store
