@@ -223,3 +223,4 @@ data/raw/
 .venv/
 *.npz
 !tests/fixtures/*.npz
+.DS_store
