@@ -64,6 +64,7 @@
 - `certify_witness(D, measured, family, witness, block=2000)` returns `(proved, worst, checked)`.
     - Checks a witness exactly, with no floating point in the verdict.
     - `worst` is a `Fraction`.
+    - Pass the resolved errors only. Absorbed errors give a product of exactly 0, so including them makes it return `proved=False` even when the LP is right.
 - `shadows(D, measured, family, block=None, dtype=float)` returns β^P = (I - Π_D) s^P, one column per family member, shape `(rows, len(family))`.
 - `straddles(measured, family)` returns s^P, one column per family member.
 
