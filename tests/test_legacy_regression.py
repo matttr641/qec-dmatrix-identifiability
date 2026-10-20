@@ -3,6 +3,8 @@
 Expected values come from the thesis, not from running the code.
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -61,6 +63,28 @@ def test_steane_two_qubit_errors():
     assert all(labels[i][0] == labels[i][2] for i in absorbed)  # e.g. "X0X3"
     assert m_star == np.inf
 
+
+# --------------------------------------------------------------------------- #
+# Fixtures: the full outputs must match the saved answer key
+# --------------------------------------------------------------------------- #
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+@pytest.mark.parametrize("case, family", [
+    (chain_11row, pair_family(7)[0]),
+    (chain_21row, pair_family(7)[0]),
+    (steane_41row, two_qubit_family(7)[0]),
+], ids=["chain_11row", "chain_21row", "steane_41row"])
+def test_matches_fixture(case, family):
+    """D', the measured set and the absorbed errors are exactly as saved by generate_fixtures.py."""
+    saved = np.load(FIXTURES / f"{case.__name__}.npz")
+    result = case()
+    _, absorbed, _, _ = gordan(result["D"], result["measured"], family)
+
+    np.testing.assert_array_equal(result["D"], saved["D"])
+    np.testing.assert_array_equal(result["measured"], saved["measured"])
+    np.testing.assert_array_equal(absorbed, saved["absorbed"])
 
 # --------------------------------------------------------------------------- #
 # Properties that must hold whatever the thesis says
