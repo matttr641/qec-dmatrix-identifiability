@@ -11,7 +11,7 @@
 - **Pauli operator on n qubits:** a pair `[x, z]` of length-n 0/1 vectors.
     - X = (1, 0), Y = (1, 1), Z = (0, 1).
     - Example: Z0Z1 on 7 qubits is `[[0,0,0,0,0,0,0], [1,1,0,0,0,0,0]]`.
-- **List of operators:** an array of shape `(count, 2, n)`.
+- **List of operators:** an array of shape `(count, 2, n)`, where count is the no. operators.
 - **Commutation:** `commutators(A, B)` gives a `(len(A), len(B))` 0/1 matrix, where 1 means anticommute. Arithmetic is mod 2.
 - **Single-qubit errors:** ordered X0, Y0, Z0, X1, Y1, Z1, ... (3n in total).
 - **D':**
