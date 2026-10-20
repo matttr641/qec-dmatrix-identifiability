@@ -13,3 +13,7 @@ dev = ["pytest"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "legacy/src", "tests"]
+markers = ["slow: long exhaustive searches"]
