@@ -1,69 +1,106 @@
-## CONVENTIONS FROM PREVIOUS WORK
+# Legacy code: conventions and interfaces
 
-The code in `legacy/src/qecnoise/` is research code organized around the
-mathematical steps in the accompanying thesis. New code that continues this
-work should follow these conventions unless there is a reason to change them.
+- **Source:** `qecnoise@b70f1148d6dbf609e19fa003dcfa6ce081b3c375`
+- **Frozen.** Never edit anything in `legacy/src/`. New code goes in `src/qecdm/`.
+- **What it does:** builds the design matrix D' for a stabilizer code (Algorithm 1, thesis Ch. 4), then decides whether errors from a declared family can hide from it (Ch. 6).
+- **Dependencies:** NumPy, SciPy, standard library.
+- **Imports:** `from qecnoise.<module> import ...`, with `legacy/src` on the Python path.
 
-### Structure and style
+## Data conventions
 
-- Keep related mathematical operations as small, top-level functions. The
-  modules are organized in stages with prominent section dividers, and the
-  public functions are imported directly by downstream modules.
-- Use descriptive `snake_case` names for functions and variables. Short
-  uppercase names are reserved for mathematical matrices and arrays such as
-  `D`, `G`, `E`, `S`, and `B`; indices and dimensions use names such as `n`,
-  `k`, `i`, and `q`.
-- Put a module docstring first. It states the mathematical purpose, expected
-  inputs and outputs, relevant thesis sections, and how to run the module as a
-  script. Add function docstrings that define the mathematical meaning,
-  parameters, return values, and any important limitations. Use nearby comments
-  to explain algorithm stages and non-obvious implementation choices.
-- Use f-strings for labels and status output. Guard demonstration code with
-	`if __name__ == "__main__":`; keep reusable calculations in functions and
-	demonstrations in that guarded block.
+- **Pauli operator on n qubits:** a pair `[x, z]` of length-n 0/1 vectors.
+    - X = (1, 0), Y = (1, 1), Z = (0, 1).
+    - Example: Z0Z1 on 7 qubits is `[[0,0,0,0,0,0,0], [1,1,0,0,0,0,0]]`.
+- **List of operators:** an array of shape `(count, 2, n)`.
+- **Commutation:** `commutators(A, B)` gives a `(len(A), len(B))` 0/1 matrix, where 1 means anticommute. Arithmetic is mod 2.
+- **Single-qubit errors:** ordered X0, Y0, Z0, X1, Y1, Z1, ... (3n in total).
+- **D':**
+    - Rows are the measured stabilizers (the "measured set").
+    - Columns are syndrome classes of single-qubit errors, one representative each. Undetectable errors are dropped.
+    - An entry is 1 when that row anticommutes with that column's error.
+- **Family:** the candidate multi-qubit errors being tested, in the same `(count, 2, n)` format.
+- **Absorbed:** a family member with zero shadow. It hides on its own.
+- **Resolved:** every family member that is not absorbed.
+- **Exact vs float:**
+    - Rank, SVD and the LP (`scipy.optimize.linprog`) are floating point, with `tol=1e-9`.
+    - `certify_witness` gives an exact verdict, using integers and `Fraction`.
 
-### Mathematical data and computation
+## Interfaces
 
-- Represent an $n$-qubit Pauli operator as a pair `[x, z]` of length-$n$
-  binary vectors, with `X = (1, 0)`, `Y = (1, 1)`, and `Z = (0, 1)`. A list of
-  operators therefore has shape `(count, 2, n)`. Document array shapes and
-  ordering where they are part of a function's interface.
-- Use NumPy arrays and vectorized operations for numerical linear algebra.
-  State explicitly when arithmetic is modulo two, use `astype(bool)` for
-  support masks, and use `dtype=float` where real-valued projections or
-  optimizers require it. Preserve stable, documented ordering for generated
-  error families and their labels.
-- Separate exact claims from numerical search. Numerical rank, projections,
-  and geometric searches use explicit tolerances; when a verdict must be
-  rigorous, use integer/rational arithmetic and verify the certificate rather
-  than treating a floating-point result as proof.
-- For large matrices or families, provide block/chunk processing where
-  practical, and explain its memory motivation. Avoid materializing large
-  intermediate matrices when a streaming calculation suffices.
-- Validate public input shapes and raise informative `ValueError`s for invalid
-  inputs. Use `RuntimeError` when an algorithm's expected invariant or
-  completion condition fails. Distinguish a capped/inconclusive search from a
-  mathematical negative result.
+### `Dmatrixsinglequbit.py`: inputs and D'
 
-### Module responsibilities
+**Building operators**
+- `paulis(n, letters, qubits)` returns one operator `[x, z]`. For example, `paulis(7, "XZ", (0, 3))` is X0 Z3.
+- `flips(n, *qubits)` returns X on each listed qubit.
+- `pair_family(n)` returns `(errors, labels)`: all C(n,2) XX errors, labelled `(a, b)`.
+- `two_qubit_family(n)` returns `(errors, labels)`: all 9·C(n,2) two-qubit errors, labelled like `"X0Y3"`.
+- `bit_flip_chain(n=7)` returns the n-1 generators Z_i Z_(i+1).
 
-- `Dmatrixsinglequbit.py` owns Pauli/error-family construction, symplectic
-  commutators, measured-set construction, and operator labels.
-- `gordanLP.py` builds on those primitives for shadows, certificates, and
-  feasibility/search routines. It uses SciPy's `linprog` for the linear
-  programme, with NumPy for matrix operations and `Fraction`/integer
-  calculations for exact certification.
-- `girth.py` composes the preceding APIs for exhaustive subset and girth
-  searches. Keep shared mathematics in its owning module rather than copying
-  the implementation into a downstream analysis.
+**Main function:** `design_matrix(n, k, stabilizers, max_order=None, extra_edges=())` returns `(D, merged, measured)`.
 
-### Dependencies and running
+- **Inputs**
+    - `stabilizers`: k generators, shape `(k, 2, n)`. A wrong shape raises `ValueError`.
+    - Default behaviour: adds products of connected generator subsets, smallest subsets first, until rank(D') = |C*|. Raises `RuntimeError` if it never gets there.
+    - `max_order`: walk to exactly this subset size instead. D' may then be rank-deficient. On the 7-qubit chain, `max_order=6` gives the 21-row complete weight-2 set.
+    - `extra_edges`: extra generator pairs `(i, j)` to join in the correlation graph (the §10.2 repair).
+- **Outputs**
+    - `D`: 0/1 integers, shape `(rows, |C*|)`.
+    - `merged`: one tuple per column, naming the single-qubit errors it stands for, e.g. `("X0", "Y0")`.
+    - `measured`: the measured stabilizers, shape `(rows, 2, n)`. Row i of `measured` is row i of `D`.
 
-- The legacy implementation uses Python's standard library, NumPy, and SciPy.
-  Import shared functions from the `qecnoise` package rather than duplicating
-  them.
-- Each analysis module can be run directly for a small, documented example;
-  output is plain, human-readable console text with labels and summary counts.
-  Computationally expensive searches should make their cap and the meaning of
-  a capped result clear.
+**Helpers**
+- `commutators(A, B)`: see Data conventions above.
+- `stabilizer_label(op)` turns an operator into a string such as `"Z0Z1"`.
+- `edge_rows(operators)` returns `{support tuple: row index}`.
 
+### `gordanLP.py`: can anything in the family hide? (§6.1 to 6.3)
+
+**Main functions**
+- `gordan(D, measured, family, tol=1e-9)` returns `(certified, absorbed, resolved, witness)`.
+    - `certified`: True when the LP is feasible, meaning no channel built from resolved family members is invisible.
+    - `absorbed`, `resolved`: lists of indices into `family`.
+    - `witness`: the certifying vector λ, or `None` when not certified.
+    - If every member is absorbed, it returns `(False, absorbed, [], None)`.
+- `certify_witness(D, measured, family, witness, block=2000)` returns `(proved, worst, checked)`.
+    - Checks a witness exactly, with no floating point in the verdict.
+    - `worst` is a `Fraction`.
+- `shadows(D, measured, family, block=None, dtype=float)` returns β^P = (I - Π_D) s^P, one column per family member, shape `(rows, len(family))`.
+- `straddles(measured, family)` returns s^P, one column per family member.
+
+**For large codes** (blocked, so they never hold the whole matrix)
+- `image_basis`, `shadow_norms`, `verify_witness`, `summed_shadow_certificate`.
+- `witness_search`: when it fails, that means no witness was found. It is not a verdict that none exists.
+
+### `girth.py`: smallest set of errors that can hide together (§6.4)
+
+**Main function:** `physical_girth(D, measured, family, max_size=6)` returns `(absorbed, spark, m_star, members)`.
+
+- `m_star = np.inf`: certified by the LP; nothing hides.
+- `m_star` an integer: the size of the smallest positive circuit. `members` gives its family indices.
+- `m_star = None`: the search hit `max_size` first, so m* > `max_size`.
+- `spark`: the smallest dependent subset size. `None` when certified.
+
+**Helper:** `spark_and_girth(B, max_size=6, tol=1e-9)` returns `(spark, size, members)` on a shadow matrix B.
+- Exhaustive, so the cost grows exponentially with `max_size`.
+- The mixed pairs-plus-triples family on the 21-row set is slow; keep it out of the default tests.
+
+## Running the demos
+
+From the repo root:
+
+```bash
+PYTHONPATH=legacy/src python -m qecnoise.Dmatrixsinglequbit   # D' for the 7-qubit chain
+PYTHONPATH=legacy/src python -m qecnoise.gordanLP             # LP verdict, 11- and 21-row sets
+PYTHONPATH=legacy/src python -m qecnoise.girth                # m* for both sets (slow at the end)
+```
+
+## Style for new code
+
+- **Functions:** small and top-level.
+- **Docstrings:** each module opens with one giving its purpose, inputs, outputs and thesis section.
+- **Names:** uppercase for matrices (`D`, `G`, `E`, `S`, `B`); `snake_case` for everything else.
+- **Errors:**
+    - Bad input raises `ValueError`.
+    - A broken internal invariant raises `RuntimeError`.
+    - Always distinguish "search capped" from "answer is no".
+- **Rigour:** rigorous claims use integers or `Fraction`. Floats are only used with an explicit tolerance.
