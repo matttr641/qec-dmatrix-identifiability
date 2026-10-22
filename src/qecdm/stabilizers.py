@@ -88,3 +88,38 @@ def label_to_stab(label, n):
         stabilizer[:, int(q)] = {"X": (1, 0), "Y": (1, 1), "Z": (0, 1)}[letter]
     return stabilizer
 
+
+# The rank over GF(2); np.linalg.matrix_rank works over the reals instead.
+def gf2_rank(M):
+    """np.ndarray (rows, columns) of 0/1 -> int: the rank with arithmetic mod 2."""
+    M = np.array(M, dtype=int) % 2
+    rank = 0
+    for column in range(M.shape[1]):
+        pivots = np.flatnonzero(M[rank:, column])
+        if len(pivots) == 0:
+            continue
+        M[[rank, rank + pivots[0]]] = M[[rank + pivots[0], rank]]
+        below_or_above = np.flatnonzero(M[:, column])
+        M[below_or_above[below_or_above != rank]] ^= M[rank]
+        rank += 1
+        if rank == len(M):
+            break
+    return rank
+
+
+def independent_stabilizers(stabilizers):
+    """np.ndarray (k, 2, n) -> np.ndarray (m, 2, n): an independent generating set.
+
+    Keeps each stabilizer that isn't a product of the ones kept before it, so
+    the first listed wins: stim's color code output (Z, Y, X faces) keeps the
+    Z and Y faces. The kept set generates the same group as the input.
+    """
+    G = np.asarray(stabilizers)
+    flat = G.reshape(len(G), -1)  # each [x, z] row laid out as one vector
+    kept = []
+    for i in range(len(G)):
+        # Independent if adding it raises the rank above the number kept.
+        if gf2_rank(flat[kept + [i]]) > len(kept):
+            kept.append(i)
+    return G[kept]
+

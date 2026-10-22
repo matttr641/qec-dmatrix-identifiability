@@ -9,7 +9,9 @@ import pytest
 import stim
 
 from cases import steane_41row, steane_generators
-from qecdm.stabilizers import label_to_stab, stab_to_label, stim_stabilizers
+from qecdm.stabilizers import (
+    gf2_rank, independent_stabilizers, label_to_stab, stab_to_label, stim_stabilizers,
+)
 from qecnoise.Dmatrixsinglequbit import commutators, design_matrix
 
 
@@ -22,24 +24,6 @@ GENERATED = [
     "surface_code:unrotated_memory_x",
     "color_code:memory_xyz",
 ]
-
-
-# The rank over GF(2); np.linalg.matrix_rank works over the reals instead.
-def gf2_rank(M):
-    """Rank of a 0/1 matrix with arithmetic mod 2, by Gaussian elimination."""
-    M = np.array(M, dtype=int) % 2
-    rank = 0
-    for column in range(M.shape[1]):
-        pivots = np.flatnonzero(M[rank:, column])
-        if len(pivots) == 0:
-            continue
-        M[[rank, rank + pivots[0]]] = M[[rank + pivots[0], rank]]
-        below_or_above = np.flatnonzero(M[:, column])
-        M[below_or_above[below_or_above != rank]] ^= M[rank]
-        rank += 1
-        if rank == len(M):
-            break
-    return rank
 
 
 # --------------------------------------------------------------------------- #
@@ -256,3 +240,33 @@ def test_labels_round_trip():
     for s in G:
         np.testing.assert_array_equal(label_to_stab(stab_to_label(s), n), s)
 
+
+# --------------------------------------------------------------------------- #
+# Independent generating sets
+# --------------------------------------------------------------------------- #
+
+
+def test_independent_drops_products_and_identity():
+    """Z0Z2 = Z0Z1 * Z1Z2 and the identity add nothing, so both are dropped."""
+    G = [label_to_stab(label, 4) for label in ["Z0Z1", "Z1Z2", "Z0Z2", "", "Z2Z3"]]
+    kept = independent_stabilizers(G)
+    assert [stab_to_label(s) for s in kept] == ["Z0Z1", "Z1Z2", "Z2Z3"]
+
+
+def test_independent_keeps_already_independent_set():
+    """The surface code's stabilizers are already independent: all are kept."""
+    G, _, _ = stim_stabilizers("surface_code:rotated_memory_z", distance=5, rounds=3)
+    np.testing.assert_array_equal(independent_stabilizers(G), G)
+
+
+def test_independent_color_code_gives_thesis_shape():
+    """Of the color code's Z, Y, X faces, the first listed win: Z and Y faces.
+
+    Any 6 independent faces generate the Steane group, so D' has the thesis shape.
+    """
+    G, _, _ = stim_stabilizers("color_code:memory_xyz", distance=3, rounds=3)
+    kept = independent_stabilizers(G)
+    np.testing.assert_array_equal(kept, G[:6])  # the 3 Z faces, then the 3 Y faces
+
+    D, _, _ = design_matrix(7, 6, kept)
+    assert D.shape == (41, 21)
