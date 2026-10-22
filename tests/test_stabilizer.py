@@ -9,7 +9,7 @@ import pytest
 import stim
 
 from cases import steane_41row, steane_generators
-from qecdm.stabilizers import (
+from qecdm.stabilizer import (
     gf2_rank, independent_stabilizers, label_to_stab, stab_to_label, stim_stabilizers,
 )
 from qecnoise.Dmatrixsinglequbit import commutators, design_matrix
