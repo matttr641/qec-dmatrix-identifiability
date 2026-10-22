@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 import stim
 
@@ -74,4 +76,15 @@ def stab_to_label(stabilizer):
     letters = {(1, 0): "X", (1, 1): "Y", (0, 1): "Z"}
     x, z = np.asarray(stabilizer)
     return "".join(f"{letters[(x[q], z[q])]}{q}" for q in np.flatnonzero(x | z))
+
+
+def label_to_stab(label, n):
+    """str, int -> np.ndarray of shape (2, n), e.g. ("Y0", 1) -> [[1], [1]].
+
+    The reverse of stab_to_label; `n` is needed as the label omits identities.
+    """
+    stabilizer = np.zeros((2, n), dtype=int)
+    for letter, q in re.findall(r"([XYZ])(\d+)", label):
+        stabilizer[:, int(q)] = {"X": (1, 0), "Y": (1, 1), "Z": (0, 1)}[letter]
+    return stabilizer
 
