@@ -127,7 +127,7 @@ def gordan_lp(C, resolved, K):
         raise RuntimeError(f"the LP solver failed: {program.message}")
 
     # Scale by t >= the largest |c^P|_1 and round: each product moves by at most
-    # |c^P|_1 / 2 < t, while the scaled products are at least t, so all stay > 0.
+    # |c^P|_1 / 2 <= t / 2, while the scaled products are at least t, so all stay >= t/2 > 0.
     t = max(sum(abs(v) for v in column) for column in A.T)
     y = [round(t * value) for value in program.x]
     products = A.T @ np.array(y, dtype=object)
