@@ -33,3 +33,17 @@ def test_d3_counts_add_up(d3):
     assert d3["absorbed"] + d3["resolved"] == d3["family"]
     assert d3["physical"] + d3["unphysical"] == d3["absorbed"]
     assert sorted(d3["absorbed_indices"] + d3["resolved_indices"]) == list(range(d3["family"]))
+
+
+def test_d3_methods_agree(d3):
+    """The large method gives the same results as the exact one (the fixture)."""
+    large = surface_code_analyse(3, method="large")
+    for key in ["rows", "classes", "kappa", "family", "absorbed", "resolved",
+                "physical", "unphysical", "certified",
+                "absorbed_indices", "resolved_indices"]:
+        assert large[key] == d3[key], key
+
+
+def test_unknown_method_raises():
+    with pytest.raises(ValueError, match="method must be"):
+        surface_code_analyse(3, method="fast")
