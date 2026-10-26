@@ -6,10 +6,13 @@ and check the fit on the rest. Arithmetic is exact modulo a prime p, which
 keeps it vectorised in int64.
 """
 
+from math import lcm
+
 import numpy as np
 from scipy import sparse
 from scipy.optimize import linprog
 
+from qecdm.dmatrix import pauli_errors
 from qecdm.gordanLP import rref
 
 # A prime below 2**26: a sum of c products of residues stays below 2**63 for
@@ -107,21 +110,21 @@ def _exact_fit(D_P, s_P, D, s):
 
 
 def split_mod_p(D, S, pivots, p=PRIME, block=2000):
-    """D', straddles, pivot rows -> (absorbed, resolved, physical, unphysical, M, C).
+    """D', straddles, pivot rows -> (absorbed, resolved, physical, unphysical).
 
     For every error: the fit g = D_P^-1 s_P and the residual c = s_F - D_F g,
     both mod p. c is the error's kernel coordinates, so c != 0 proves it
     resolved. c = 0 makes it a candidate for absorbed, confirmed by lifting g to
     integers and checking D g = s exactly. A confirmed error is physical when
-    every entry of g is >= 0. M = D_P^-1 mod p and C (kappa x m, mod p) are
-    returned for the later steps. The family is processed `block` columns at a
-    time, so the dense straddles are never all held at once.
+    every entry of g is >= 0. The family is processed `block` columns at a
+    time, and each block's residuals are dropped once used, so neither the dense
+    straddles nor the full kappa x m residual matrix is ever held at once.
     """
     D = np.asarray(D, dtype=np.int64)
     D_P, D_F = split_rows(D, pivots)
     M = inverse_mod(D_P, p)
 
-    absorbed, resolved, physical, unphysical, C_blocks = [], [], [], [], []
+    absorbed, resolved, physical, unphysical = [], [], [], []
     for start in range(0, S.shape[1], block):
         S_block = S[:, start:start + block]
         S_block = S_block.toarray() if sparse.issparse(S_block) else np.asarray(S_block)
@@ -129,7 +132,6 @@ def split_mod_p(D, S, pivots, p=PRIME, block=2000):
 
         G = M @ S_P % p                 # the fits, mod p          (c x block)
         C = (S_F - D_F @ G) % p         # the residuals, mod p     (kappa x block)
-        C_blocks.append(C)
 
         for j in range(S_block.shape[1]):
             error = start + j
@@ -146,7 +148,7 @@ def split_mod_p(D, S, pivots, p=PRIME, block=2000):
             absorbed.append(error)
             (physical if all(x >= 0 for x in g) else unphysical).append(error)
 
-    return absorbed, resolved, physical, unphysical, M, np.hstack(C_blocks)
+    return absorbed, resolved, physical, unphysical
 
 
 def sparse_lp(D, S, resolved):
@@ -182,3 +184,67 @@ def sparse_lp(D, S, resolved):
     if program.status != 0:
         raise RuntimeError(f"the LP solver failed: {program.message}")
     return True, program.x
+
+
+def exact_witness(D, S, resolved, pivots, lam, max_doublings=40):
+    """The solver's approximate lambda -> an integer witness, proved exactly.
+
+    lambda = K z for an integer z lies in ker(D^T) exactly, where K is the
+    kernel basis of the pivot rows: its free part is z and its pivot part is
+    -D_P^-T D_F^T z. So z = round(t * lambda_F) is the free part, the pivot part
+    comes from one exact c x c solve, and every <lambda, s^P> over the resolved
+    P is then checked in integers. t starts at 1 and doubles until every
+    product is positive. Returns lambda scaled to integers (a positive multiple
+    of a witness is a witness), as an object array of Python ints.
+    """
+    D = np.asarray(D, dtype=np.int64)
+    D_P, D_F = split_rows(D, pivots)
+    free = np.setdiff1d(np.arange(len(D)), pivots)
+    c = D.shape[1]
+
+    S_R = sparse.csc_matrix(S)[:, resolved]  # each column's rows are S_R.indices[indptr[j]:indptr[j+1]]
+    D_F_T = D_F.T.astype(object)              # Python ints, so the products cannot overflow
+
+    t = 1
+    for _ in range(max_doublings):
+        # Free part: the solver's free entries, scaled by t and rounded.
+        z = np.array([round(t * value) for value in lam[free]], dtype=object)
+
+        # Pivot part: lambda_P = -w with D_P^T w = D_F^T z, solved exactly.
+        b = D_F_T @ z
+        A, _ = rref(np.hstack([D_P.T.astype(object), b.reshape(-1, 1)]), columns=c)
+        w = [row[c] for row in A[:c]]
+
+        # Clear the denominators: delta * lambda is an integer vector, still a witness.
+        delta = lcm(*(x.denominator for x in w))
+        witness = np.empty(len(D), dtype=object)
+        witness[pivots] = [-int(x * delta) for x in w]
+        witness[free] = [int(x) * delta for x in z]
+
+        # Exact checks: D^T lambda = 0, and <lambda, s^P> > 0 for every resolved P.
+        in_kernel = all(v == 0 for v in D.T.astype(object) @ witness)
+        positive = all(
+            sum(witness[i] for i in S_R.indices[S_R.indptr[j]:S_R.indptr[j + 1]]) > 0
+            for j in range(S_R.shape[1])
+        )
+        if in_kernel and positive:
+            return witness
+        t *= 2
+    raise RuntimeError("could not round the LP solution to an exact witness")
+
+
+def gordan_large(D, measured, family=None):
+    """D', measured set, family -> (certified, absorbed, resolved, witness, physical, unphysical).
+
+    The same decision as gordanLP.gordan, for large codes: K is never formed.
+    `family` defaults to every two-qubit Pauli error. certified is True for
+    branch (i), with an integer witness proved exactly; otherwise witness is None.
+    """
+    if family is None:
+        family, _ = pauli_errors(np.asarray(measured).shape[2], 2)
+    pivots = pivot_rows(D)
+    S = sparse_straddles(measured, family)
+    absorbed, resolved, physical, unphysical = split_mod_p(D, S, pivots)
+    certified, lam = sparse_lp(D, S, resolved)
+    witness = exact_witness(D, S, resolved, pivots, lam) if certified else None
+    return certified, absorbed, resolved, witness, physical, unphysical
