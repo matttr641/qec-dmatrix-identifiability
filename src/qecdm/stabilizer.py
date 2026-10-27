@@ -130,9 +130,9 @@ def qldpc_stabilizers(code):
     """qldpc code -> (np.ndarray (count, 2, n), list, list): stabilizers, qubits, coords.
 
     Pass an already-built code, e.g. codes.SurfaceCode(5), codes.SteaneCode() or
-    codes.BBCode({x: 12, y: 6}, x**3 + y + y**2, y**3 + x + x**2), so no
+    codes.BBCode({x: 6, y: 6}, x**3 + y + y**2, y**3 + x + x**2), so no
     code-specific arguments are needed here. The rows are qldpc's checks as
-    given, which may be redundant (the BB code lists 144 of rank 132): pass them
+    given, which may be redundant (the [[72,12,6]] BB code lists 72 of rank 60): pass them
     through independent_stabilizers before design_matrix. The output matches
     stim_stabilizers; qldpc gives no coordinates, so coords are all None.
     """
