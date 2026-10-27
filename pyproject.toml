@@ -6,7 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "qecdm"
 version = "0.0.1"
 requires-python = ">=3.10"
-dependencies = ["stim", "pymatching>=2.3", "numpy", "scipy"]
+dependencies = ["stim", "pymatching>=2.3", "numpy", "scipy", "qldpc"
+, "numba<0.63; sys_platform == 'darwin' and platform_machine == 'x86_64'",]
 
 [project.optional-dependencies]
 dev = ["pytest"]
