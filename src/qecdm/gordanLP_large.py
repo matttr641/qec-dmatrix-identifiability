@@ -186,6 +186,25 @@ def sparse_lp(D, S, resolved):
     return True, program.x
 
 
+def verify_witness(D, S, resolved, witness):
+    """D', straddles, resolved indices, integer lambda -> bool: is it a witness, exactly?
+
+    True when D^T lambda = 0 and <lambda, s^P> > 0 for every resolved P, both
+    in Python ints so nothing can overflow or round. The straddles are 0/1, so
+    <lambda, s^P> is the sum of lambda over the rows where s^P = 1. This is the
+    only gate to branch (i): however lambda was found, it passes only if it is
+    a witness for the problem as given.
+    """
+    witness = np.asarray(witness, dtype=object)
+    if not all(v == 0 for v in np.asarray(D, dtype=object).T @ witness):
+        return False                          # not in ker(D^T)
+    S_R = sparse.csc_matrix(S)[:, resolved]   # each column's rows are S_R.indices[indptr[j]:indptr[j+1]]
+    return all(
+        sum(witness[S_R.indices[S_R.indptr[j]:S_R.indptr[j + 1]]]) > 0
+        for j in range(S_R.shape[1])
+    )
+
+
 def exact_witness(D, S, resolved, pivots, lam, max_doublings=40):
     """The solver's approximate lambda -> an integer witness, proved exactly.
 
@@ -193,8 +212,8 @@ def exact_witness(D, S, resolved, pivots, lam, max_doublings=40):
     kernel basis of the pivot rows: its free part is z and its pivot part is
     -D_P^-T D_F^T z. So z = round(t * lambda_F) is the free part, the pivot part
     comes from one exact c x c solve, and every <lambda, s^P> over the resolved
-    P is then checked in integers. t starts at 1 and doubles until every
-    product is positive. Returns lambda scaled to integers (a positive multiple
+    P is then checked in integers by verify_witness. t starts at 1 and doubles
+    until it passes. Returns lambda scaled to integers (a positive multiple
     of a witness is a witness), as an object array of Python ints.
     """
     D = np.asarray(D, dtype=np.int64)
@@ -202,7 +221,6 @@ def exact_witness(D, S, resolved, pivots, lam, max_doublings=40):
     free = np.setdiff1d(np.arange(len(D)), pivots)
     c = D.shape[1]
 
-    S_R = sparse.csc_matrix(S)[:, resolved]  # each column's rows are S_R.indices[indptr[j]:indptr[j+1]]
     D_F_T = D_F.T.astype(object)              # Python ints, so the products cannot overflow
 
     t = 1
@@ -221,13 +239,7 @@ def exact_witness(D, S, resolved, pivots, lam, max_doublings=40):
         witness[pivots] = [-int(x * delta) for x in w]
         witness[free] = [int(x) * delta for x in z]
 
-        # Exact checks: D^T lambda = 0, and <lambda, s^P> > 0 for every resolved P.
-        in_kernel = all(v == 0 for v in D.T.astype(object) @ witness)
-        positive = all(
-            sum(witness[i] for i in S_R.indices[S_R.indptr[j]:S_R.indptr[j + 1]]) > 0
-            for j in range(S_R.shape[1])
-        )
-        if in_kernel and positive:
+        if verify_witness(D, S, resolved, witness):
             return witness
         t *= 2
     raise RuntimeError("could not round the LP solution to an exact witness")

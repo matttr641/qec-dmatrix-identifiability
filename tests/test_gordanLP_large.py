@@ -17,7 +17,7 @@ from qecdm.dmatrix import design_matrix, pauli_errors
 from qecdm.gordanLP import gordan, rref, split_absorbed, straddles
 from qecdm.gordanLP_large import (
     PRIME, _exact_fit, gordan_large, inverse_mod, pivot_rows, sparse_lp,
-    sparse_straddles, split_rows,
+    sparse_straddles, split_rows, verify_witness,
 )
 from qecdm.stabilizer import stim_stabilizers
 from qecnoise.Dmatrixsinglequbit import pair_family, two_qubit_family
@@ -93,6 +93,25 @@ def test_witness_is_positive_on_every_resolved_straddle(steane_witness):
     _, measured, family, resolved, witness = steane_witness
     S = np.asarray(straddles(measured, family), dtype=object)
     assert all(product > 0 for product in witness @ S[:, resolved])
+
+
+def test_verify_witness_accepts_the_witness(steane_witness):
+    D, measured, family, resolved, witness = steane_witness
+    assert verify_witness(D, sparse_straddles(measured, family), resolved, witness)
+
+
+def test_verify_witness_rejects_outside_the_kernel(steane_witness):
+    """One entry changed: D^T lambda is no longer 0."""
+    D, measured, family, resolved, witness = steane_witness
+    broken = witness.copy()
+    broken[0] += 1
+    assert not verify_witness(D, sparse_straddles(measured, family), resolved, broken)
+
+
+def test_verify_witness_rejects_the_negated_witness(steane_witness):
+    """-lambda is still in ker(D^T), but every <lambda, s^P> is now negative."""
+    D, measured, family, resolved, witness = steane_witness
+    assert not verify_witness(D, sparse_straddles(measured, family), resolved, -witness)
 
 
 # --------------------------------------------------------------------------- #
