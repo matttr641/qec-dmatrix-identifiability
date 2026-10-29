@@ -186,6 +186,15 @@ def sparse_lp(D, S, resolved):
     return True, program.x
 
 
+def _positive(S, columns, witness):
+    """<lambda, s^P> > 0 for each listed column of the 0/1 straddles, in Python ints."""
+    S_R = sparse.csc_matrix(S)[:, columns]    # each column's rows are S_R.indices[indptr[j]:indptr[j+1]]
+    return all(
+        sum(witness[S_R.indices[S_R.indptr[j]:S_R.indptr[j + 1]]]) > 0
+        for j in range(S_R.shape[1])
+    )
+
+
 def verify_witness(D, S, resolved, witness):
     """D', straddles, resolved indices, integer lambda -> bool: is it a witness, exactly?
 
@@ -198,11 +207,25 @@ def verify_witness(D, S, resolved, witness):
     witness = np.asarray(witness, dtype=object)
     if not all(v == 0 for v in np.asarray(D, dtype=object).T @ witness):
         return False                          # not in ker(D^T)
-    S_R = sparse.csc_matrix(S)[:, resolved]   # each column's rows are S_R.indices[indptr[j]:indptr[j+1]]
-    return all(
-        sum(witness[S_R.indices[S_R.indptr[j]:S_R.indptr[j + 1]]]) > 0
-        for j in range(S_R.shape[1])
-    )
+    return _positive(S, resolved, witness)
+
+
+def verify_witness_blocks(D, measured, family, resolved, witness, block=5000):
+    """verify_witness without holding S: its columns are built `block` errors at a time.
+
+    The same check on the same problem, for when the straddles of the whole
+    family do not fit in memory. D^T lambda = 0 is checked once; then each
+    block of resolved errors has its straddles built, checked and dropped.
+    """
+    witness = np.asarray(witness, dtype=object)
+    if not all(v == 0 for v in np.asarray(D, dtype=object).T @ witness):
+        return False                          # not in ker(D^T)
+    family, resolved = np.asarray(family), np.asarray(resolved, dtype=int)
+    for start in range(0, len(resolved), block):
+        chunk = resolved[start:start + block]
+        if not _positive(sparse_straddles(measured, family[chunk]), range(len(chunk)), witness):
+            return False
+    return True
 
 
 def exact_witness(D, S, resolved, pivots, lam, max_doublings=40):

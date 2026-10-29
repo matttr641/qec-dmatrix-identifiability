@@ -15,7 +15,7 @@ from scipy import sparse
 
 from qecdm.dmatrix import pauli_errors
 from qecdm.gordanLP import rref
-from qecdm.gordanLP_large import pivot_rows, sparse_lp, sparse_straddles, split_mod_p, verify_witness
+from qecdm.gordanLP_large import pivot_rows, sparse_lp, sparse_straddles, split_mod_p, verify_witness_blocks
 
 
 def induced_permutation(paulis, q):
@@ -125,11 +125,13 @@ def gordan_symmetric(D, measured, perms, family=None):
     measured set and the family to themselves (for a BB code, bb_translations).
     Each orbit of errors is classified by one representative, the LP has one
     unknown per orbit of rows (lambda = B mu), and lambda is accepted only if
-    verify_witness passes on the full problem.
+    it is a witness for the full problem. The straddles are only ever built for
+    the representatives, or a block of errors at a time, never all at once.
     """
     measured = np.asarray(measured)
     if family is None:
         family, _ = pauli_errors(measured.shape[2], 2)
+    family = np.asarray(family)  # so family[indices] picks errors
 
     # The orbits: B for the rows, a label for each error.
     B = orbit_matrix(orbits([induced_permutation(measured, q) for q in perms]))
@@ -137,8 +139,7 @@ def gordan_symmetric(D, measured, perms, family=None):
     reps = np.unique(error_labels)  # a label is its orbit's smallest member, so a member
 
     # Classify the representatives only, then give each orbit its representative's verdict.
-    S = sparse.csc_matrix(sparse_straddles(measured, family))
-    S_reps = S[:, reps]
+    S_reps = sparse.csc_matrix(sparse_straddles(measured, family[reps]))  # one column per orbit
     split = split_mod_p(D, S_reps, pivot_rows(D))  # positions within reps
     absorbed, resolved, physical, unphysical = (
         np.flatnonzero(np.isin(error_labels, reps[positions])).tolist() for positions in split
@@ -153,6 +154,6 @@ def gordan_symmetric(D, measured, perms, family=None):
 
     mu = exact_reduced_witness(D_red, S_red, mu)
     witness = mu[B.indices]  # lambda = B mu: B has one entry per row, in its orbit's column
-    if not verify_witness(D, S, resolved, witness):
+    if not verify_witness_blocks(D, measured, family, resolved, witness):
         raise RuntimeError("lambda = B mu fails on the full problem: perms is not a symmetry")
     return True, absorbed, resolved, witness, physical, unphysical
