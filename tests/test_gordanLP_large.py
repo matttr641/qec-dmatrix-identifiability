@@ -17,7 +17,7 @@ from qecdm.dmatrix import design_matrix, pauli_errors
 from qecdm.gordanLP import gordan, rref, split_absorbed, straddles
 from qecdm.gordanLP_large import (
     PRIME, _exact_fit, gordan_large, inverse_mod, pivot_rows, sparse_lp,
-    sparse_straddles, split_rows, verify_witness,
+    sparse_straddles, split_rows, verify_witness, verify_witness_blocks,
 )
 from qecdm.stabilizer import stim_stabilizers
 from qecnoise.Dmatrixsinglequbit import pair_family, two_qubit_family
@@ -112,6 +112,50 @@ def test_verify_witness_rejects_the_negated_witness(steane_witness):
     """-lambda is still in ker(D^T), but every <lambda, s^P> is now negative."""
     D, measured, family, resolved, witness = steane_witness
     assert not verify_witness(D, sparse_straddles(measured, family), resolved, -witness)
+
+
+# Steane has 126 resolved errors: blocks of 1, of 50 (the last one short), of 63
+# (an exact divisor), and of 1000 (all in one block).
+BLOCKS = [1, 50, 63, 1000]
+
+
+@pytest.mark.parametrize("block", BLOCKS)
+def test_verify_witness_blocks_accepts_the_witness(steane_witness, block):
+    D, measured, family, resolved, witness = steane_witness
+    assert len(resolved) == 126
+    assert verify_witness_blocks(D, measured, family, resolved, witness, block=block)
+
+
+@pytest.mark.parametrize("block", BLOCKS)
+def test_verify_witness_blocks_rejects_outside_the_kernel(steane_witness, block):
+    D, measured, family, resolved, witness = steane_witness
+    broken = witness.copy()
+    broken[0] += 1
+    assert not verify_witness_blocks(D, measured, family, resolved, broken, block=block)
+
+
+@pytest.mark.parametrize("block", BLOCKS)
+def test_verify_witness_blocks_rejects_the_negated_witness(steane_witness, block):
+    D, measured, family, resolved, witness = steane_witness
+    assert not verify_witness_blocks(D, measured, family, resolved, -witness, block=block)
+
+
+def test_verify_witness_blocks_checks_every_block(steane_witness):
+    """An absorbed error put last fails, and only it: s = D g gives <lambda, s> =
+    <D^T lambda, g> = 0. With blocks of 50 it sits alone in the short last block
+    (50 + 50 + 27), so a loop that stopped early or skipped that block would pass."""
+    D, measured, family, resolved, witness = steane_witness
+    absorbed = sorted(set(range(len(family))) - set(resolved))[0]
+    S = sparse_straddles(measured, family)
+    assert not verify_witness(D, S, [absorbed], witness)
+    assert not verify_witness_blocks(D, measured, family, resolved + [absorbed], witness, block=50)
+
+
+def test_verify_witness_blocks_nothing_resolved(steane_witness):
+    """With no errors to check, both versions report only the kernel check."""
+    D, measured, family, _, witness = steane_witness
+    S = sparse_straddles(measured, family)
+    assert verify_witness_blocks(D, measured, family, [], witness) == verify_witness(D, S, [], witness)
 
 
 # --------------------------------------------------------------------------- #

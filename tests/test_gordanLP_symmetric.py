@@ -352,3 +352,32 @@ def test_bb72_is_certified():
     assert physical == unphysical == []
     assert len(witness) == 12780
     assert all(isinstance(v, int) for v in witness)
+
+
+def test_family_may_be_a_list():
+    """family[indices] needs an array: a list of Paulis is converted first."""
+    D, measured, perms = bb_inputs(*CERTIFIED_BB[0])
+    family, _ = pauli_errors(measured.shape[2], 2)
+    as_array = gordan_symmetric(D, measured, perms, family)
+    as_list = gordan_symmetric(D, measured, perms, list(family))
+    assert as_list[:3] == as_array[:3] and as_list[4:] == as_array[4:]
+    assert as_list[3].tolist() == as_array[3].tolist()
+
+
+def test_full_straddles_are_never_built(monkeypatch):
+    """S is built for the 102 representatives, then for the 540 resolved errors in
+    the final check, never for all 594 errors at once."""
+    import qecdm.gordanLP_large
+    import qecdm.gordanLP_symmetric
+
+    D, measured, perms = bb_inputs(*CERTIFIED_BB[0])
+    widths = []
+
+    def recording(measured, family):
+        widths.append(len(family))
+        return sparse_straddles(measured, family)
+
+    monkeypatch.setattr(qecdm.gordanLP_symmetric, "sparse_straddles", recording)
+    monkeypatch.setattr(qecdm.gordanLP_large, "sparse_straddles", recording)
+    assert gordan_symmetric(D, measured, perms)[0]  # certified, so the final check runs
+    assert widths == [102, 540]
