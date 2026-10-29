@@ -2,6 +2,8 @@ import re
 
 import numpy as np
 import stim
+from qldpc import codes
+from sympy.abc import x, y
 
 
 # The Pauli each single-qubit measurement gate reads out.
@@ -123,3 +125,21 @@ def independent_stabilizers(stabilizers):
             kept.append(i)
     return G[kept]
 
+
+def qldpc_stabilizers(code):
+    """qldpc code -> (np.ndarray (count, 2, n), list, list): stabilizers, qubits, coords.
+
+    Pass an already-built code, e.g. codes.SurfaceCode(5), codes.SteaneCode() or
+    codes.BBCode({x: 6, y: 6}, x**3 + y + y**2, y**3 + x + x**2), so no
+    code-specific arguments are needed here. The rows are qldpc's checks as
+    given, which may be redundant (the [[72,12,6]] BB code lists 72 of rank 60): pass them
+    through independent_stabilizers before design_matrix. The output matches
+    stim_stabilizers; qldpc gives no coordinates, so coords are all None.
+    """
+    if code.field.order != 2:
+        raise ValueError(f"only qubit codes are supported, not GF({code.field.order})")
+    n = code.num_qudits
+    # qldpc's parity-check matrix is [X part | Z part], one check per row.
+    H = np.asarray(code.matrix, dtype=int)
+    G = np.stack([H[:, :n], H[:, n:]], axis=1)  # each check as [x, z]
+    return G, list(range(n)), [None] * n

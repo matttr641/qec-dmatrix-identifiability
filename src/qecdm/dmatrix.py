@@ -56,28 +56,61 @@ def connected(graph, subset):
     return len(reached) == len(subset)
 
 
-def stab_products(stabilizers, order, graph=None):
-    """np.ndarray (k, 2, n), int -> (np.ndarray (m, 2, n), list): products, subsets.
+def connected_subsets(graph):
+    """np.ndarray (k, k) of bools -> generator of lists: the connected subsets, by size.
 
-    Multiplies together every connected set of `order` stabilizers, and returns
-    the products with the stabilizer indices that made each one, e.g. (0, 3).
-    Products that come out as the identity are dropped. `graph` defaults to
-    the correlation graph; pass your own to add or remove edges.
+    Yields every connected subset of size 1, then size 2, and so on, each as a
+    sorted tuple of node indices, each list in the order itertools.combinations
+    would give. Size r is grown from size r - 1: every connected subset is a
+    smaller connected one plus a neighbour. Only connected subsets are visited.
+    """
+    k = len(graph)
+    neighbours = [set(np.flatnonzero(graph[i])) - {i} for i in range(k)]
+    level = [(i,) for i in range(k)]
+    while True:
+        yield level
+        grown = set()
+        for subset in level:
+            for v in set().union(*(neighbours[i] for i in subset)) - set(subset):
+                grown.add(tuple(sorted(subset + (v,))))  # sorted, so each subset once
+        level = sorted(grown)
+
+
+def stab_products_by_order(stabilizers, graph=None):
+    """np.ndarray (k, 2, n) -> generator of (np.ndarray (m, 2, n), list): products, subsets.
+
+    For order 1, 2, ...: every connected set of that many stabilizers multiplied
+    together, with the stabilizer indices that made each one. Products that come
+    out as the identity are dropped. `graph` defaults to the correlation graph;
+    pass your own to add or remove edges.
     """
     G = np.asarray(stabilizers)
     if graph is None:
         graph = correlation_graph(G)
+    bits = (G % 2).astype(np.uint8)  # one byte per bit, to keep big levels small
 
-    products, subsets = [], []
-    for subset in combinations(range(len(G)), order):
-        if not connected(graph, subset):
+    for level in connected_subsets(graph):
+        if not level:
+            yield np.zeros((0, *G.shape[1:]), dtype=int), []
             continue
-        # Multiplying Paulis is adding their [x, z] bits mod 2 (signs dropped).
-        product = G[list(subset)].sum(axis=0) % 2
-        if product.any():
-            products.append(product)
-            subsets.append(subset)
-    return np.array(products, dtype=int).reshape(-1, *G.shape[1:]), subsets
+        index = np.array(level)  # (m, order): row j lists subset j's stabilizers
+        # Multiplying Paulis is adding their [x, z] bits mod 2: XOR them in, one member at a time.
+        products = np.zeros((len(level), *G.shape[1:]), dtype=np.uint8)
+        for member in index.T:
+            products ^= bits[member]
+        keep = products.reshape(len(level), -1).any(axis=1)  # drop the identity
+        yield products[keep].astype(int), [s for s, kept in zip(level, keep) if kept]
+
+
+def stab_products(stabilizers, order, graph=None):
+    """np.ndarray (k, 2, n), int -> (np.ndarray (m, 2, n), list): products, subsets.
+
+    The products of every connected set of exactly `order` stabilizers; see
+    stab_products_by_order.
+    """
+    for r, result in enumerate(stab_products_by_order(stabilizers, graph), start=1):
+        if r == order:
+            return result
 
 
 def design_matrix(stabilizers, weights=(1,), max_order=None):
@@ -119,12 +152,12 @@ def design_matrix(stabilizers, weights=(1,), max_order=None):
 
     # 3. Walk the orders, adding each new product as a row, until the rank
     #    reaches |C*| (or for exactly max_order orders).
-    graph = correlation_graph(G)
+    levels = stab_products_by_order(G)  # one order at a time, each built from the last
     measured, subsets, D, seen = [], [], [], set()
     order, rank = 0, 0
     while order < k and (rank < len(keep) if max_order is None else order < max_order):
         order += 1
-        for stabilizer, subset in zip(*stab_products(G, order, graph)):
+        for stabilizer, subset in zip(*next(levels)):
             if stabilizer.tobytes() in seen:  # already made by another subset
                 continue
             seen.add(stabilizer.tobytes())

@@ -1,4 +1,4 @@
-"""Tests for stim_stabilizers and the label helpers.
+"""Tests for stim_stabilizers, qldpc_stabilizers and the label helpers.
 
 Known answers are written out in full, so any change in the output, including
 the row or column order, fails a test.
@@ -7,12 +7,15 @@ the row or column order, fails a test.
 import numpy as np
 import pytest
 import stim
+from qldpc import codes
+from sympy.abc import x, y
 
 from cases import steane_41row, steane_generators
 from qecdm.stabilizer import (
-    gf2_rank, independent_stabilizers, label_to_stab, stab_to_label, stim_stabilizers,
+    gf2_rank, independent_stabilizers, label_to_stab, qldpc_stabilizers, stab_to_label,
+    stim_stabilizers,
 )
-from qecnoise.Dmatrixsinglequbit import commutators, design_matrix
+from qecdm.dmatrix import commutators, design_matrix
 
 
 # Every stim generated memory circuit, by name.
@@ -61,7 +64,7 @@ def test_color_code_is_thesis_steane():
     G = G[[8, 6, 7, 2, 0, 1]]
     np.testing.assert_array_equal(G, steane_generators())
 
-    D, _, _ = design_matrix(7, 6, G)
+    D, _, _, _ = design_matrix(G)
     assert D.shape == (41, 21)
     np.testing.assert_array_equal(D, steane_41row()["D"])
 
@@ -268,5 +271,70 @@ def test_independent_color_code_gives_thesis_shape():
     kept = independent_stabilizers(G)
     np.testing.assert_array_equal(kept, G[:6])  # the 3 Z faces, then the 3 Y faces
 
-    D, _, _ = design_matrix(7, 6, kept)
+    D, _, _, _ = design_matrix(kept)
     assert D.shape == (41, 21)
+
+
+# --------------------------------------------------------------------------- #
+# Stabilizers from qldpc
+# --------------------------------------------------------------------------- #
+
+
+def test_qldpc_output_format():
+    """The same layout as stim_stabilizers: plain int 0/1 rows, qubits, coords."""
+    G, qubits, coords = qldpc_stabilizers(codes.SteaneCode())
+    assert type(G) is np.ndarray  # not a galois array, whose arithmetic is mod 2
+    assert G.dtype == int
+    assert G.shape == (6, 2, 7)
+    assert set(np.unique(G)) <= {0, 1}
+    assert qubits == list(range(7))
+    assert coords == [None] * 7
+
+
+@pytest.mark.parametrize("code, labels", [
+    (codes.FiveQubitCode(), ["X0Z1Z2X3", "X1Z2Z3X4", "X0X2Z3Z4", "Z0X1X3Z4"]),
+    (codes.SteaneCode(), ["X3X4X5X6", "X1X2X5X6", "X0X2X4X6",
+                          "Z3Z4Z5Z6", "Z1Z2Z5Z6", "Z0Z2Z4Z6"]),
+], ids=["five_qubit", "steane"])
+def test_qldpc_known_stabilizers(code, labels):
+    """Each check's X part and Z part land in the right place.
+
+    The five-qubit code mixes X and Z within a check, so swapping the halves or
+    splitting at the wrong column changes the labels.
+    """
+    G, _, _ = qldpc_stabilizers(code)
+    assert [stab_to_label(g) for g in G] == labels
+
+
+def test_qldpc_qudit_code_raises():
+    with pytest.raises(ValueError, match="only qubit codes"):
+        qldpc_stabilizers(codes.FiveQuditCode(3))
+
+
+def test_qldpc_bivariate_bicycle_72():
+    """The [[72, 12, 6]] code: 72 checks as given, of which 60 are independent."""
+    G, _, _ = qldpc_stabilizers(codes.BBCode({x: 6, y: 6}, x**3 + y + y**2, y**3 + x + x**2))
+    assert G.shape == (72, 2, 72)
+    assert not commutators(G, G).any()
+    assert gf2_rank(G.reshape(len(G), -1)) == 60  # 72 qubits - 12 logical qubits
+    assert len(independent_stabilizers(G)) == 60
+
+
+def test_qldpc_surface_code_matches_stim():
+    """qldpc and stim number the qubits differently, so compare what doesn't depend on it."""
+    G, _, _ = qldpc_stabilizers(codes.SurfaceCode(3))
+    stim_G, _, _ = stim_stabilizers("surface_code:rotated_memory_z", distance=3, rounds=1)
+    assert G.shape == stim_G.shape == (8, 2, 9)
+    assert not commutators(G, G).any()
+    assert gf2_rank(G.reshape(len(G), -1)) == 8
+    assert design_matrix(G)[0].shape == design_matrix(stim_G)[0].shape == (50, 23)
+
+
+def test_qldpc_steane_is_thesis_steane():
+    """qldpc's Steane checks are the thesis generators as they stand, so D' is the thesis's."""
+    G, _, _ = qldpc_stabilizers(codes.SteaneCode())
+    np.testing.assert_array_equal(G, steane_generators())
+
+    D, _, _, _ = design_matrix(G)
+    np.testing.assert_array_equal(D, steane_41row()["D"])
+    assert len(D) - np.linalg.matrix_rank(D) == 20  # kappa
