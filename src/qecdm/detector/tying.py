@@ -14,12 +14,20 @@ A tying rule is a key function: faults with equal keys share a parameter.
 Faults in a `fixed` channel (by default the data preparation, which is
 calibrated separately) are kept out of T and go to T_fixed, so a fit can move
 their known contribution to the other side: y - D'_fixed theta_cal.
+
+What can be learned is set by M = S T, where S (signatures x faults) has a 1
+where a fault has that detector pattern: M[sigma, k] counts parameter k's
+faults with pattern sigma. Every row of D' sees a fault only through its
+pattern, so D'_tied = D_sig M with D_sig of full column rank once all
+connected subsets are rows: rank(D'_tied) <= rank(M), with equality at the
+end of the walk, and null(D'_tied) = null(M).
 """
 
 import numpy as np
 from scipy import sparse
 
 from qecdm.detector.faults import CHANNELS
+from qecdm.gordanLP import left_kernel
 
 
 def key_rounds(fault):
@@ -64,3 +72,41 @@ def tying_matrix(faults, rule="rounds", fixed=("prep",)):
     T, names = _indicator([key(faults[j]) for j in free], free, len(faults))
     T_fixed, fixed_names = _indicator([key(faults[j]) for j in known], known, len(faults))
     return T, names, T_fixed, fixed_names
+
+
+def signature_counts(H, T):
+    """H (detectors x faults), T (faults x parameters) -> (M, signatures).
+
+    signatures[i] is the i-th distinct detector pattern (a tuple of detectors),
+    and M[i, k] is how many of parameter k's faults have that pattern.
+    """
+    patterns = [tuple(sorted(H[:, j].indices)) for j in range(H.shape[1])]
+    S, signatures = _indicator(patterns, list(range(len(patterns))), len(patterns))  # faults x signatures
+    M = (S.T @ T).toarray()
+    return M, signatures
+
+
+def merge_parameters(M, names):
+    """M, names -> (M with duplicate columns removed, groups).
+
+    Parameters with identical columns of M trip the same patterns the same
+    number of times, so the detectors only ever see the sum of their thetas.
+    groups[k] lists the names merged into column k.
+    """
+    groups = {}
+    for k, column in enumerate(M.T):
+        groups.setdefault(tuple(column), []).append(k)
+    keep = [ks[0] for ks in groups.values()]
+    return M[:, keep], [[names[k] for k in ks] for ks in groups.values()]
+
+
+def identifiability(M, groups):
+    """Merged M, groups -> (rank, directions): the rank target, and what cannot be learned.
+
+    Each direction is a list of (group, coefficient) pairs: changing every
+    group's theta by its coefficient times a step changes no signature count,
+    so no detector data can see it. rank = columns of M - len(directions).
+    """
+    null = left_kernel(M.T)  # ker(M), exactly: the left kernel of M^T
+    directions = [[(groups[k], int(v)) for k, v in enumerate(vector) if v] for vector in null.T]
+    return M.shape[1] - len(directions), directions
