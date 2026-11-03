@@ -1,15 +1,17 @@
 """Tests for the tying matrix: every fault lands in exactly one parameter, the rules give
-the parameters worked out by hand, and fixed channels go to T_fixed."""
+the parameters worked out by hand, and fixed channels go to T_fixed. Then M, merging and
+identifiability: the rank target and the directions the detectors cannot see."""
 
 from collections import Counter
 
 import numpy as np
 import pytest
+from scipy import sparse
 from sympy.abc import x, y
 
 from qecdm.detector.circuits import bb_memory, repetition_memory, surface_memory, uniform_noise
 from qecdm.detector.faults import circuit_faults
-from qecdm.detector.tying import tying_matrix
+from qecdm.detector.tying import identifiability, merge_parameters, signature_counts, tying_matrix
 
 BB = ({x: 2, y: 3}, 1 + y + x * y**2, 1 + y + x * y**2)  # [[12,4]], the small certified BB code
 NOISE = uniform_noise(0.01)
@@ -23,9 +25,23 @@ CIRCUITS = {
 
 
 @pytest.fixture(scope="module")
-def faults():
-    """name -> list of Fault, each built once and shared by every test."""
-    return {name: circuit_faults(build())[1] for name, build in CIRCUITS.items()}
+def built():
+    """name -> (H, faults), each built once and shared by every test."""
+    return {name: circuit_faults(build()) for name, build in CIRCUITS.items()}
+
+
+@pytest.fixture(scope="module")
+def faults(built):
+    """name -> list of Fault."""
+    return {name: fault_list for name, (_, fault_list) in built.items()}
+
+
+def merged(built, name, rule="rounds", fixed=("prep",)):
+    """The merged M and its groups for one circuit and rule."""
+    H, fault_list = built[name]
+    T, names, _, _ = tying_matrix(fault_list, rule, fixed)
+    M, _ = signature_counts(H, T)
+    return merge_parameters(M, names)
 
 
 def members(T):
@@ -150,3 +166,114 @@ def test_unknown_fixed_channel_raises(faults):
 def test_unknown_rule_raises(faults):
     with pytest.raises(KeyError):
         tying_matrix(faults["rep_r2"], "round")
+
+
+# --- signature_counts ------------------------------------------------------------------
+
+# 5 faults on detectors D0, D2: patterns (0,), (0, 2), (0,), (2,), (2,); parameters
+# A = {0, 3}, B = {1}, C = {2, 4}.
+TOY_H = sparse.csc_matrix(np.array([[1, 1, 1, 0, 0],
+                                    [0, 0, 0, 0, 0],
+                                    [0, 1, 0, 1, 1]]))
+TOY_T = sparse.csc_matrix(np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 0, 1]]))
+
+
+def test_signature_counts_by_hand():
+    """M[sigma, k] counts parameter k's faults with pattern sigma."""
+    M, signatures = signature_counts(TOY_H, TOY_T)
+    assert signatures == [(0,), (0, 2), (2,)]
+    assert M.tolist() == [[1, 0, 1],
+                          [0, 1, 0],
+                          [1, 0, 1]]
+
+
+@pytest.mark.parametrize("name", list(CIRCUITS))
+def test_signature_counts_keep_every_fault(built, name):
+    """Each fault has one pattern, so M's columns add up to each parameter's number of
+    faults, and the signatures are H's distinct columns."""
+    H, fault_list = built[name]
+    T, _, _, _ = tying_matrix(fault_list, "rounds")
+    M, signatures = signature_counts(H, T)
+    assert M.sum(axis=0).tolist() == np.asarray(T.sum(axis=0)).ravel().tolist()
+    assert len(signatures) == len(set(signatures)) == M.shape[0]
+
+
+# --- merge_parameters ------------------------------------------------------------------
+
+def test_merge_by_hand():
+    """A and C have the same column, so they merge; B stays alone."""
+    M, _ = signature_counts(TOY_H, TOY_T)
+    M_merged, groups = merge_parameters(M, ["A", "B", "C"])
+    assert groups == [["A", "C"], ["B"]]
+    assert M_merged.tolist() == [[1, 0], [0, 1], [1, 0]]
+
+
+@pytest.mark.parametrize("name", ["rep_r2", "surface_r3"])
+def test_merge_keeps_the_rank(built, name):
+    """Merging only removes repeated columns, so the rank is unchanged."""
+    H, fault_list = built[name]
+    T, names, _, _ = tying_matrix(fault_list, "rounds")
+    M, _ = signature_counts(H, T)
+    M_merged, groups = merge_parameters(M, names)
+    assert np.linalg.matrix_rank(M_merged) == np.linalg.matrix_rank(M)
+    assert sorted(n for group in groups for n in group) == sorted(names)  # every name in one group
+
+
+@pytest.mark.parametrize("name", ["rep_r2", "surface_r3", "bb_r3"])
+def test_measure_and_reset_always_merge(built, name):
+    """An ancilla reset flip and its next measurement flip trip the same detectors."""
+    _, groups = merged(built, name, "channels")
+    assert ["measure", "reset"] in groups
+
+
+# --- identifiability -------------------------------------------------------------------
+
+def test_identifiability_by_hand():
+    """Columns a + b = c: the step (+1, +1, -1) changes no count, so the rank is 2."""
+    M = np.array([[1, 0, 1], [0, 1, 1]])
+    rank, directions = identifiability(M, ["a", "b", "c"])
+    assert rank == 2
+    assert directions in ([[("a", -1), ("b", -1), ("c", 1)]], [[("a", 1), ("b", 1), ("c", -1)]])
+
+
+@pytest.mark.parametrize("name, rule, fixed, columns, rank", [
+    ("rep_r2", "rounds", ("prep",), 12, 12),
+    ("rep_r2", "rounds", (), 15, 12),
+    ("rep_r2", "channels", ("prep",), 4, 4),
+    ("rep_r5", "rounds", ("prep",), 12, 12),          # more rounds, the same target
+    ("surface_r3", "rounds", ("prep",), 135, 126),
+    ("surface_r3", "channels", ("prep",), 5, 5),
+    ("bb_r3", "rounds", ("prep",), 63, 57),
+    ("bb_r3", "channels", ("prep",), 4, 4),
+])
+def test_rank_targets(built, name, rule, fixed, columns, rank):
+    M_merged, groups = merged(built, name, rule, fixed)
+    found, directions = identifiability(M_merged, groups)
+    assert (M_merged.shape[1], found) == (columns, rank)
+    assert found == np.linalg.matrix_rank(M_merged)
+    assert len(directions) == columns - rank
+
+
+@pytest.mark.parametrize("name", ["rep_r2", "surface_r3", "bb_r3"])
+def test_directions_change_no_count(built, name):
+    """Rebuild each direction as a vector over the merged columns: M v = 0."""
+    M_merged, groups = merged(built, name)
+    _, directions = identifiability(M_merged, groups)
+    for direction in directions:
+        v = np.zeros(len(groups), dtype=int)
+        for group, coefficient in direction:
+            v[groups.index(group)] = coefficient
+        assert v.any() and not (M_merged @ v).any()
+
+
+def test_repetition_gauge_without_prep(built):
+    """Nothing fixed: one direction per data qubit, each holding that qubit's prep and its
+    readout with opposite signs (the prep, idle, after-check CNOT, readout gauge)."""
+    _, directions = identifiability(*merged(built, "rep_r2", fixed=()))
+    assert len(directions) == 3
+    for direction in directions:
+        sign = {group[0][0]: c for group, c in direction if group[0][0] in ("prep", "readout")}
+        assert len(direction) == 4
+        assert sign["prep"] == -sign["readout"]
+    preps = {group[0][1] for direction in directions for group, _ in direction if group[0][0] == "prep"}
+    assert preps == {(0,), (2,), (4,)}  # a different data qubit in each
