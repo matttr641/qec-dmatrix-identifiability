@@ -8,6 +8,8 @@ A tying rule is a key function: faults with equal keys share a parameter.
 - "rounds": stationary in time. A fault is tied with the same fault (same
   channel, position in the round, qubits and Pauli) in every other round. All
   resets of a qubit share one rate; prep and readout happen once per qubit.
+- "gates": "rounds", but one depolarizing rate per gate: every Pauli of an
+  idle, one- or two-qubit gate's channel shares it, as DEPOLARIZE1/2 assume.
 - "channels": one rate per channel (idle, gate_1q, gate_2q, measure, reset,
   prep, readout), the same for every qubit, gate and round.
 
@@ -37,12 +39,19 @@ def key_rounds(fault):
     return (fault.channel, fault.position, fault.qubits, fault.pauli)
 
 
+def key_gates(fault):
+    """Fault -> tuple: the per-round key without the Pauli for depolarizing channels."""
+    if fault.channel in ("idle", "gate_1q", "gate_2q"):
+        return (fault.channel, fault.position, fault.qubits)  # all of the gate's Paulis
+    return key_rounds(fault)
+
+
 def key_channels(fault):
     """Fault -> str: the per-channel key. Ties every fault of a channel."""
     return fault.channel
 
 
-RULES = {"rounds": key_rounds, "channels": key_channels}
+RULES = {"rounds": key_rounds, "gates": key_gates, "channels": key_channels}
 
 
 def _indicator(keys, rows, n):

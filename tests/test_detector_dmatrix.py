@@ -19,7 +19,7 @@ CIRCUITS = {
     "surface_r3": lambda: surface_memory(3, 3, NOISE),
     "bb_r3": lambda: bb_memory(*BB, 3, NOISE),
 }
-CASES = [(name, rule) for name in CIRCUITS for rule in ("rounds", "channels")]
+CASES = [(name, rule) for name in CIRCUITS for rule in ("rounds", "gates", "channels")]
 
 
 @pytest.fixture(scope="module")

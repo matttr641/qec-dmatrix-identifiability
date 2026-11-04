@@ -52,7 +52,7 @@ def members(T):
 # --- every fault exactly once ------------------------------------------------------
 
 @pytest.mark.parametrize("name", list(CIRCUITS))
-@pytest.mark.parametrize("rule", ["rounds", "channels"])
+@pytest.mark.parametrize("rule", ["rounds", "gates", "channels"])
 def test_every_fault_in_exactly_one_parameter(faults, name, rule):
     """Side by side, T and T_fixed have one 1 in every row: no fault lost or counted twice."""
     T, names, T_fixed, fixed_names = tying_matrix(faults[name], rule)
@@ -124,6 +124,27 @@ def test_rounds_ties_every_reset_of_an_ancilla(faults):
     resets = [rows for key, rows in zip(names, members(T)) if key[0] == "reset"]
     assert [len(rows) for rows in resets] == [5, 5]
     assert all(len({fault_list[j].qubits for j in rows}) == 1 for rows in resets)
+
+
+def test_gates_ties_every_pauli_of_a_gate(faults):
+    """One rate per CNOT: each gate_2q parameter holds its 12 detectable Paulis in both
+    rounds, all on the same qubit pair at the same position."""
+    fault_list = faults["rep_r2"]
+    T, names, _, _ = tying_matrix(fault_list, "gates")
+    assert Counter(key[0] for key in names) == {
+        "idle": 3, "gate_2q": 4, "measure": 2, "reset": 2, "readout": 3}
+    for key, rows in zip(names, members(T)):
+        if key[0] == "gate_2q":
+            group = [fault_list[j] for j in rows]
+            assert len(group) == 24 and len({f.pauli for f in group}) == 12
+            assert len({(f.position, f.qubits) for f in group}) == 1
+
+
+@pytest.mark.parametrize("name, gates", [("rep_r2", 14), ("rep_r5", 14), ("surface_r3", 66),
+                                         ("bb_r3", 252)])
+def test_gates_parameter_counts(faults, name, gates):
+    T, _, _, _ = tying_matrix(faults[name], "gates")
+    assert T.shape[1] == gates
 
 
 def test_channels_ties_a_whole_channel(faults):
@@ -243,7 +264,10 @@ def test_identifiability_by_hand():
     ("rep_r5", "rounds", ("prep",), 12, 12),          # more rounds, the same target
     ("surface_r3", "rounds", ("prep",), 135, 126),
     ("surface_r3", "channels", ("prep",), 5, 5),
+    ("rep_r2", "gates", ("prep",), 12, 12),
+    ("surface_r3", "gates", ("prep",), 52, 48),
     ("bb_r3", "rounds", ("prep",), 63, 57),
+    ("bb_r3", "gates", ("prep",), 111, 57),
     ("bb_r3", "channels", ("prep",), 4, 4),
 ])
 def test_rank_targets(built, name, rule, fixed, columns, rank):
@@ -277,3 +301,15 @@ def test_repetition_gauge_without_prep(built):
         assert sign["prep"] == -sign["readout"]
     preps = {group[0][1] for direction in directions for group, _ in direction if group[0][0] == "prep"}
     assert preps == {(0,), (2,), (4,)}  # a different data qubit in each
+
+
+def test_surface_gates_directions_are_the_hadamards(built):
+    """Under "gates", the surface code's 4 directions are its 4 X-check ancillas. The
+    depolarizing after each of the ancilla's two Hs has two Paulis that only flip its
+    measurement (Z, Y after the first H; X, Y after the last), so both Hs merge into one
+    group whose column is twice the measure (+ reset) column."""
+    _, directions = identifiability(*merged(built, "surface_r3", "gates"))
+    assert len(directions) == 4
+    for direction in directions:
+        assert sorted((group[0][0], c) for group, c in direction) == [("gate_1q", 1), ("measure", -2)]
+        assert len({group[0][2] for group, _ in direction}) == 1  # both keys: (channel, position, qubits, ...)
