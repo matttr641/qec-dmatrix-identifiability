@@ -14,6 +14,7 @@ from qecdm.detector.tying import RULES
 
 NOISE_KEY = {"prep": "reset"}  # the data preparation uses the reset rate; every other channel its own
 
+#Making our true value for our theta = sum(log(1-2p_i)) for parameters i in theta, eg. just idle or measure+reset
 
 def fault_probability(fault, noise):
     """Fault, noise dict -> float: q, the probability of this one fault."""
@@ -41,6 +42,7 @@ def true_thetas(faults, noise, design, rule="rounds"):
     return (np.array([sum(theta[name] for name in group) for group in design.groups]),
             np.array([theta[name] for name in design.fixed_names]))
 
+#What is the exact data vector we should get
 
 def exact_expectations(circuit, subsets):
     """stim circuit, list of detector tuples -> array: the exact <(-1)^row> of each subset.
@@ -59,3 +61,24 @@ def exact_expectations(circuit, subsets):
         theta = np.log(1 - 2 * error.args_copy()[0])
         log_y += [len(flipped & s) % 2 * theta for s in sets]
     return np.exp(log_y)
+
+#Sampling the data vector
+
+def sample_detectors(circuit, shots, seed=None):
+    """stim circuit, int -> (shots x detectors) bool array: True where a detector fired."""
+    return circuit.compile_detector_sampler(seed=seed).sample(shots)
+
+
+def row_expectations(samples, subsets):
+    """(shots x detectors) array, list of detector tuples -> array: the sampled <(-1)^row>.
+
+    A shot gives a row +1 if an even number of its detectors fired and -1 if
+    odd, so the average over the shots is 1 - 2 * (the fraction with odd parity).
+    """
+    y = np.zeros(len(subsets))
+    for i, subset in enumerate(subsets):
+        odd = samples[:, list(subset)].sum(axis=1) % 2 #sum over columns of detectors in subset for all shots 
+        y[i] = 1 - 2 * odd.mean() #mean = pr(subset of detectors flipped), since 0=not flipped, 1=flipped
+    return y
+
+#Fitting the data vector

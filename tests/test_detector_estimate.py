@@ -1,5 +1,6 @@
 """Tests for the true values: the rate of one fault, the true thetas, stim's exact
-expectations, and that the model D theta + D_fixed theta_fixed reproduces them."""
+expectations, and that the model D theta + D_fixed theta_fixed reproduces them. Then
+the sampled expectations, against the exact ones."""
 
 import numpy as np
 import pytest
@@ -8,7 +9,8 @@ from sympy.abc import x, y
 
 from qecdm.detector.circuits import bb_memory, repetition_memory, surface_memory, uniform_noise
 from qecdm.detector.detector_dmatrix import detector_design_matrix
-from qecdm.detector.estimate import exact_expectations, fault_probability, true_thetas
+from qecdm.detector.estimate import (exact_expectations, fault_probability, row_expectations,
+                                     sample_detectors, true_thetas)
 from qecdm.detector.faults import Fault, circuit_faults
 
 BB = ({x: 2, y: 3}, 1 + y + x * y**2, 1 + y + x * y**2)  # [[12,4]], the small certified BB code
@@ -181,3 +183,39 @@ def test_model_reproduces_stim_exactly(built, name, rule):
     theta, theta_fixed = true_thetas(faults, NOISE, design, rule)
     log_y = np.log(exact_expectations(circuit, design.subsets))
     assert np.abs(log_y - (design.D @ theta + design.D_fixed @ theta_fixed)).max() < 1e-12
+
+
+# --- samples ---------------------------------------------------------------------------
+
+def test_samples_have_one_row_per_shot_and_one_column_per_detector():
+    assert sample_detectors(TOY, 10, seed=1).shape == (10, 2)
+
+
+def test_the_seed_fixes_the_samples():
+    a, b, c = (sample_detectors(TOY, 1000, seed=seed) for seed in (5, 5, 6))
+    assert (a == b).all()
+    assert (a != c).any()
+
+
+def test_no_noise_never_fires():
+    circuit = repetition_memory(3, 2, uniform_noise(0))
+    assert not sample_detectors(circuit, 100, seed=1).any()
+
+
+def test_row_expectations_by_hand():
+    """Row (0, 1): only shot 1 has odd parity, as both detectors fired in shot 2. 1 - 2 * 1/4 = 0.5."""
+    samples = np.array([[1, 0],
+                        [1, 1],
+                        [0, 0],
+                        [0, 0]], dtype=bool)
+    assert row_expectations(samples, [(0,), (1,), (0, 1)]) == pytest.approx([0, 0.5, 0.5])
+
+
+@pytest.mark.parametrize("name", CIRCUITS)
+def test_samples_approach_the_exact_expectations(built, name):
+    """Every row within 5 standard errors of stim's exact value, sqrt((1 - y^2) / shots)."""
+    circuit, _, design = built[name, "rounds"]
+    shots = 100_000
+    exact = exact_expectations(circuit, design.subsets)
+    sampled = row_expectations(sample_detectors(circuit, shots, seed=1), design.subsets)
+    assert (np.abs(sampled - exact) < 5 * np.sqrt((1 - exact**2) / shots)).all()
