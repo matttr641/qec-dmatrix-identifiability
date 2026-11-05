@@ -60,6 +60,15 @@ def detector_design_matrix(circuit, rule="rounds", fixed=("prep",), max_order=No
     given (D may then fall short). Raises if the target is never reached.
     """
     H, faults = circuit_faults(circuit)
+    return design_from_faults(H, faults, rule, fixed, max_order)
+
+
+def design_from_faults(H, faults, rule="rounds", fixed=("prep",), max_order=None):
+    """H (detectors x faults), list of Fault -> DetectorDesign, as detector_design_matrix.
+
+    For any H and its faults, such as those of a window of rounds; subsets
+    number the detectors by the rows of H.
+    """
     T, names, T_fixed, fixed_names = tying_matrix(faults, rule, fixed)
     M, signatures = signature_counts(H, T)
     M_fixed, _ = signature_counts(H, T_fixed)  # the same signatures: they depend on H only
