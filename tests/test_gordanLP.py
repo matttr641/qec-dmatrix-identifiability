@@ -11,12 +11,12 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-import qecdm.gordanLP
+import qecdm.stabilizer.gordanLP
 from cases import chain_11row, chain_21row, steane_41row
-from qecdm.gordanLP import (
+from qecdm.stabilizer.gordanLP import (
     gordan, gordan_lp, left_kernel, rref, split_absorbed, split_shadows, straddles,
 )
-from qecdm.stabilizer import label_to_stab
+from qecdm.stabilizer.stabilizers import label_to_stab
 from qecnoise.Dmatrixsinglequbit import pair_family, two_qubit_family
 from qecnoise.gordanLP import shadows as legacy_shadows
 
@@ -246,7 +246,7 @@ def test_nothing_resolved_skips_the_solver(monkeypatch):
     """With no resolved errors there is nothing to certify, so the LP never runs."""
     def no_solver(*args, **kwargs):
         raise AssertionError("linprog should not be called")
-    monkeypatch.setattr(qecdm.gordanLP, "linprog", no_solver)
+    monkeypatch.setattr(qecdm.stabilizer.gordanLP, "linprog", no_solver)
 
     assert gordan_lp(ints([[0, 0]]), [], ints([[1]])) == (False, None)
 
@@ -283,7 +283,7 @@ def test_solver_failure_raises(monkeypatch):
     """A status other than solved (0) or infeasible (2) is an error, not a verdict."""
     def failing_solver(*args, **kwargs):
         return SimpleNamespace(status=1, message="Iteration limit reached.")
-    monkeypatch.setattr(qecdm.gordanLP, "linprog", failing_solver)
+    monkeypatch.setattr(qecdm.stabilizer.gordanLP, "linprog", failing_solver)
 
     with pytest.raises(RuntimeError, match="Iteration limit"):
         gordan_lp(ints([[1]]), [0], ints([[1]]))

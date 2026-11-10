@@ -15,11 +15,11 @@ from qldpc import codes
 from sympy.abc import x, y
 
 from cases import chain_11row, chain_21row, steane_41row, steane_generators
-from qecdm.dmatrix import (
+from qecdm.stabilizer.dmatrix import (
     commutators, connected, connected_subsets, correlation_graph, design_matrix, pauli_errors,
     stab_products, stab_products_by_order,
 )
-from qecdm.stabilizer import (
+from qecdm.stabilizer.stabilizers import (
     independent_stabilizers, label_to_stab, qldpc_stabilizers, stab_to_label, stim_stabilizers,
 )
 from qecnoise.Dmatrixsinglequbit import bit_flip_chain, two_qubit_family

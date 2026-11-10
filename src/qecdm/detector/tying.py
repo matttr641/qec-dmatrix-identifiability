@@ -29,7 +29,7 @@ import numpy as np
 from scipy import sparse
 
 from qecdm.detector.faults import CHANNELS
-from qecdm.gordanLP import left_kernel
+from qecdm.stabilizer.gordanLP import left_kernel
 
 
 def key_rounds(fault):

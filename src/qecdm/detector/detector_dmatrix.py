@@ -19,7 +19,7 @@ from scipy import sparse
 
 from qecdm.detector.faults import circuit_faults
 from qecdm.detector.tying import identifiability, merge_parameters, signature_counts, tying_matrix
-from qecdm.dmatrix import connected_subsets
+from qecdm.stabilizer.dmatrix import connected_subsets
 
 DetectorDesign = namedtuple("DetectorDesign", "D groups D_fixed fixed_names subsets target directions")
 
