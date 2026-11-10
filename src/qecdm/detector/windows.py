@@ -143,11 +143,22 @@ def long_run_rates(design, circuit, size, last=None, stride=1, shots=1, seed=Non
     over the windows (and shots) before one fit. last=N uses only the last N
     windows, to follow drift; None uses every window from round 2 on.
     stride = size + 1 makes the windows independent.
+
+    Detectors are numbered round by round, so window detector i at `start` is
+    circuit detector (the first detector of round `start`) + i, as in shift_subsets.
     """
     rounds = detector_rounds(circuit)
+    first = {}
+    for d, r in enumerate(rounds):
+        first.setdefault(r, d)  # the first detector of each round
     end = max(r for r in rounds if r is not None)
-    starts = list(range(2, end - size + 2, stride))[-last if last else 0:]
+    starts = list(range(2, end - size + 2, stride))
+    if last:
+        starts = starts[-last:]
+    offsets = np.array([first[start] for start in starts])
     samples = sample_detectors(circuit, shots, seed)
-    y = np.mean([row_expectations(samples, shift_subsets(design.subsets, rounds, start, size)) for start in starts], axis=0)
+    # one row at a time, every window and shot at once: samples[shot, window, detector of the row]
+    y = np.array([1 - 2 * (samples[:, offsets[:, None] + list(subset)].sum(axis=2) % 2).mean()
+                  for subset in design.subsets])
     theta = fit_thetas(design, y, np.zeros(0))  # nothing is fixed in a window
     return theta, rates_from_thetas(design, theta)
