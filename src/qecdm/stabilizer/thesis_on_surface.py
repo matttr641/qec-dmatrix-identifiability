@@ -7,10 +7,10 @@ import time
 
 import numpy as np
 
-from qecdm.dmatrix import design_matrix, pauli_errors
-from qecdm.gordanLP import gordan, split_absorbed, straddles
-from qecdm.gordanLP_large import gordan_large
-from qecdm.stabilizer import independent_stabilizers, stim_stabilizers
+from qecdm.stabilizer.dmatrix import design_matrix, pauli_errors
+from qecdm.stabilizer.gordanLP import gordan, split_absorbed, straddles
+from qecdm.stabilizer.gordanLP_large import gordan_large
+from qecdm.stabilizer.stabilizer import independent_stabilizers, stim_stabilizers
 
 
 def surface_code_analyse(distance, rounds=1, name="surface_code:rotated_memory_z", family=None,

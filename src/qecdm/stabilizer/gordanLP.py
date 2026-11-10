@@ -4,7 +4,7 @@ from math import gcd, lcm
 import numpy as np
 from scipy.optimize import linprog
 
-from qecdm.dmatrix import commutators, pauli_errors
+from qecdm.stabilizer.dmatrix import commutators, pauli_errors
 
 
 def straddles(measured, family):
