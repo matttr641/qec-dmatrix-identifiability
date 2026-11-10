@@ -190,7 +190,7 @@ def true_window_thetas(design, circuit, noise_at, size, starts, average=False):
                                ([i for i, row in enumerate(rows) for _ in row], [d for row in rows for d in row])),
                               shape=(len(rows), H.shape[0]))
         flips = R @ H              # how many of each row's detectors each fault trips
-        flips.data %= 2            # odd means the fault flips the row
+        flips.data %= 2            # odd means the fault flips the row, untied D' for rows in window
         ys.append(np.exp(flips @ theta))
     if average:
         return fit_thetas(design, np.mean(ys, axis=0), np.zeros(0))
