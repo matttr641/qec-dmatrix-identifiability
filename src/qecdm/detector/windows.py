@@ -4,10 +4,11 @@ from bisect import bisect_right
 
 import numpy as np
 import stim
+from scipy import sparse
 
 from qecdm.detector.detector_dmatrix import design_from_faults
-from qecdm.detector.estimate import (NOISE_KEY, fit_thetas, rates_from_thetas, row_expectations,
-                                     sample_detectors)
+from qecdm.detector.estimate import (NOISE_KEY, fault_probability, fit_thetas, rates_from_thetas,
+                                     row_expectations, sample_detectors)
 from qecdm.detector.faults import (_is_noise, _moments, circuit_faults, fault_channel, fault_round,
                                    measurement_moments, qubit_roles)
 
@@ -112,6 +113,14 @@ def drifting_circuit(circuit, noise_at):
             out.append(ins.name, group, noise[NOISE_KEY.get(channel, channel)])
     return out
 
+#The window start rounds used by the fits below
+
+def window_starts(rounds, size, stride=1, last=None):
+    """detector_rounds list, window size -> list: every start from round 2, `stride` apart, or the last `last`."""
+    end = max(r for r in rounds if r is not None)
+    starts = list(range(2, end - size + 2, stride))
+    return starts[-last:] if last else starts
+
 #Fits every window position of a (drifting) circuit with the one window D'
 
 def track_rates(design, circuit, size, shots, stride=1, seed=None):
@@ -124,8 +133,7 @@ def track_rates(design, circuit, size, shots, stride=1, seed=None):
     one entry per column of design.D.
     """
     rounds = detector_rounds(circuit)
-    last = max(r for r in rounds if r is not None)
-    starts = list(range(2, last - size + 2, stride))
+    starts = window_starts(rounds, size, stride)
     samples = sample_detectors(circuit, shots, seed)
     thetas = []
     for start in starts:
@@ -151,10 +159,7 @@ def long_run_rates(design, circuit, size, last=None, stride=1, shots=1, seed=Non
     first = {}
     for d, r in enumerate(rounds):
         first.setdefault(r, d)  # the first detector of each round
-    end = max(r for r in rounds if r is not None)
-    starts = list(range(2, end - size + 2, stride))
-    if last:
-        starts = starts[-last:]
+    starts = window_starts(rounds, size, stride, last)
     offsets = np.array([first[start] for start in starts])
     samples = sample_detectors(circuit, shots, seed)
     # one row at a time, every window and shot at once: samples[shot, window, detector of the row]
@@ -162,3 +167,31 @@ def long_run_rates(design, circuit, size, last=None, stride=1, shots=1, seed=Non
                   for subset in design.subsets])
     theta = fit_thetas(design, y, np.zeros(0))  # nothing is fixed in a window
     return theta, rates_from_thetas(design, theta)
+
+#The true value of each window fit when the rates drift
+
+def true_window_thetas(design, circuit, noise_at, size, starts, average=False):
+    """Window DetectorDesign, stim.Circuit, function round -> noise dict, window size, starts -> thetas.
+
+    What the window fits would give with infinitely many shots, from our own
+    faults: each fault has the theta of its own round, every row's log y is
+    the sum over the faults that flip it, and the fit turns those into one
+    theta per column, a weighted average over the rounds the window sees.
+    One theta per start, or with average=True one theta from y averaged over
+    the windows first, as long_run_rates does.
+    """
+    rounds = detector_rounds(circuit)
+    H, faults = circuit_faults(circuit)
+    theta = np.array([np.log(1 - 2 * fault_probability(f, noise_at(f.round))) for f in faults])
+    ys = []
+    for start in starts:
+        rows = shift_subsets(design.subsets, rounds, start, size)
+        R = sparse.csr_matrix((np.ones(sum(map(len, rows))),
+                               ([i for i, row in enumerate(rows) for _ in row], [d for row in rows for d in row])),
+                              shape=(len(rows), H.shape[0]))
+        flips = R @ H              # how many of each row's detectors each fault trips
+        flips.data %= 2            # odd means the fault flips the row
+        ys.append(np.exp(flips @ theta))
+    if average:
+        return fit_thetas(design, np.mean(ys, axis=0), np.zeros(0))
+    return np.array([fit_thetas(design, y, np.zeros(0)) for y in ys])
