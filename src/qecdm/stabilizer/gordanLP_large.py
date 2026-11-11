@@ -12,8 +12,8 @@ import numpy as np
 from scipy import sparse
 from scipy.optimize import linprog
 
-from qecdm.dmatrix import pauli_errors
-from qecdm.gordanLP import rref
+from qecdm.stabilizer.dmatrix import pauli_errors
+from qecdm.stabilizer.gordanLP import rref
 
 # A prime below 2**26: a sum of c products of residues stays below 2**63 for
 # c up to about 2**11 classes, so int64 never overflows.

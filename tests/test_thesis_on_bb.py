@@ -5,7 +5,7 @@ import pytest
 from qldpc import codes
 from sympy.abc import x, y
 
-from qecdm.thesis_on_bb import anchored_errors, bb_code_analyse, bb_code_split
+from qecdm.stabilizer.thesis_on_bb import anchored_errors, bb_code_analyse, bb_code_split
 
 COUNTS = ["qubits", "logicals", "checks", "rows", "classes", "kappa", "max_order",
           "family", "absorbed", "resolved", "physical", "unphysical"]

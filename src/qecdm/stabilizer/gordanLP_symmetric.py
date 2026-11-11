@@ -13,9 +13,9 @@ from math import lcm
 import numpy as np
 from scipy import sparse
 
-from qecdm.dmatrix import pauli_errors
-from qecdm.gordanLP import rref
-from qecdm.gordanLP_large import pivot_rows, sparse_lp, sparse_straddles, split_mod_p, verify_witness_blocks
+from qecdm.stabilizer.dmatrix import pauli_errors
+from qecdm.stabilizer.gordanLP import rref
+from qecdm.stabilizer.gordanLP_large import pivot_rows, sparse_lp, sparse_straddles, split_mod_p, verify_witness_blocks
 
 
 def induced_permutation(paulis, q):

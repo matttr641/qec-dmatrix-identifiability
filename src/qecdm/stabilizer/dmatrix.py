@@ -2,7 +2,7 @@ from itertools import combinations, product
 
 import numpy as np
 
-from qecdm.stabilizer import label_to_stab
+from qecdm.stabilizer.stabilizers import label_to_stab
 
 
 def commutators(A, B):

@@ -11,11 +11,11 @@ from qldpc import codes
 from sympy.abc import x, y
 
 from cases import steane_41row, steane_generators
-from qecdm.stabilizer import (
+from qecdm.stabilizer.stabilizers import (
     gf2_rank, independent_stabilizers, label_to_stab, qldpc_stabilizers, stab_to_label,
     stim_stabilizers,
 )
-from qecdm.dmatrix import commutators, design_matrix
+from qecdm.stabilizer.dmatrix import commutators, design_matrix
 
 
 # Every stim generated memory circuit, by name.

@@ -7,7 +7,7 @@ arguments (for example the measured set, not the generators, going to gordan).
 
 import pytest
 
-from qecdm.thesis_on_surface import surface_code_analyse
+from qecdm.stabilizer.thesis_on_surface import surface_code_analyse
 
 
 @pytest.fixture(scope="module")

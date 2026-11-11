@@ -10,11 +10,11 @@ import numpy as np
 from qldpc import codes
 from sympy.abc import x, y
 
-from qecdm.dmatrix import design_matrix, pauli_errors
-from qecdm.gordanLP import gordan, split_absorbed, straddles
-from qecdm.gordanLP_large import gordan_large, pivot_rows, sparse_straddles, split_mod_p
-from qecdm.gordanLP_symmetric import bb_translations, gordan_symmetric
-from qecdm.stabilizer import label_to_stab, qldpc_stabilizers
+from qecdm.stabilizer.dmatrix import design_matrix, pauli_errors
+from qecdm.stabilizer.gordanLP import gordan, split_absorbed, straddles
+from qecdm.stabilizer.gordanLP_large import gordan_large, pivot_rows, sparse_straddles, split_mod_p
+from qecdm.stabilizer.gordanLP_symmetric import bb_translations, gordan_symmetric
+from qecdm.stabilizer.stabilizers import label_to_stab, qldpc_stabilizers
 
 
 def bb_code_analyse(orders, poly_a, poly_b, family=None, method="symmetric"):

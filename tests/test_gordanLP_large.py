@@ -11,15 +11,15 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-import qecdm.gordanLP_large
+import qecdm.stabilizer.gordanLP_large
 from cases import chain_11row, chain_21row, steane_41row
-from qecdm.dmatrix import design_matrix, pauli_errors
-from qecdm.gordanLP import gordan, rref, split_absorbed, straddles
-from qecdm.gordanLP_large import (
+from qecdm.stabilizer.dmatrix import design_matrix, pauli_errors
+from qecdm.stabilizer.gordanLP import gordan, rref, split_absorbed, straddles
+from qecdm.stabilizer.gordanLP_large import (
     PRIME, _exact_fit, gordan_large, inverse_mod, pivot_rows, sparse_lp,
     sparse_straddles, split_rows, verify_witness, verify_witness_blocks,
 )
-from qecdm.stabilizer import stim_stabilizers
+from qecdm.stabilizer.stabilizers import stim_stabilizers
 from qecnoise.Dmatrixsinglequbit import pair_family, two_qubit_family
 
 
@@ -231,7 +231,7 @@ def test_sparse_lp_raises_when_both_methods_fail(monkeypatch):
     """Interior point, then dual simplex: neither reaching a verdict is an error."""
     def no_verdict(*args, **kwargs):
         return SimpleNamespace(status=4, message="Numerical difficulties.")
-    monkeypatch.setattr(qecdm.gordanLP_large, "linprog", no_verdict)
+    monkeypatch.setattr(qecdm.stabilizer.gordanLP_large, "linprog", no_verdict)
 
     D = np.array([[1], [0]])
     S = np.array([[1], [1]])

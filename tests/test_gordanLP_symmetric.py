@@ -11,9 +11,9 @@ import pytest
 from qldpc import codes
 from sympy.abc import x, y
 
-from qecdm.dmatrix import design_matrix, pauli_errors
-from qecdm.gordanLP_large import gordan_large, sparse_straddles, verify_witness
-from qecdm.gordanLP_symmetric import (
+from qecdm.stabilizer.dmatrix import design_matrix, pauli_errors
+from qecdm.stabilizer.gordanLP_large import gordan_large, sparse_straddles, verify_witness
+from qecdm.stabilizer.gordanLP_symmetric import (
     bb_translations,
     exact_reduced_witness,
     gordan_symmetric,
@@ -21,7 +21,7 @@ from qecdm.gordanLP_symmetric import (
     orbit_matrix,
     orbits,
 )
-from qecdm.stabilizer import label_to_stab, qldpc_stabilizers, stim_stabilizers
+from qecdm.stabilizer.stabilizers import label_to_stab, qldpc_stabilizers, stim_stabilizers
 
 
 def stabs(labels, n):
@@ -367,8 +367,8 @@ def test_family_may_be_a_list():
 def test_full_straddles_are_never_built(monkeypatch):
     """S is built for the 102 representatives, then for the 540 resolved errors in
     the final check, never for all 594 errors at once."""
-    import qecdm.gordanLP_large
-    import qecdm.gordanLP_symmetric
+    import qecdm.stabilizer.gordanLP_large
+    import qecdm.stabilizer.gordanLP_symmetric
 
     D, measured, perms = bb_inputs(*CERTIFIED_BB[0])
     widths = []
@@ -377,7 +377,7 @@ def test_full_straddles_are_never_built(monkeypatch):
         widths.append(len(family))
         return sparse_straddles(measured, family)
 
-    monkeypatch.setattr(qecdm.gordanLP_symmetric, "sparse_straddles", recording)
-    monkeypatch.setattr(qecdm.gordanLP_large, "sparse_straddles", recording)
+    monkeypatch.setattr(qecdm.stabilizer.gordanLP_symmetric, "sparse_straddles", recording)
+    monkeypatch.setattr(qecdm.stabilizer.gordanLP_large, "sparse_straddles", recording)
     assert gordan_symmetric(D, measured, perms)[0]  # certified, so the final check runs
     assert widths == [102, 540]
